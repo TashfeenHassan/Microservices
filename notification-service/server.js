@@ -1,32 +1,48 @@
 const express = require("express");
 const pool = require("./db");
-const redis = require("redis");
+const amqp = require("amqplib"); // Import RabbitMQ
 require("dotenv").config();
 
 const app = express();
 app.use(express.json());
+
 const cors = require("cors");
 app.use(cors());
 
-// 🔥 Connect to Redis
-const redisClient = redis.createClient();
-redisClient.connect();
+let channel, connection;
 
-// 📌 Subscribe to Booking Notifications
-redisClient.subscribe("notifications", async (message) => {
-    const data = JSON.parse(message);
-    console.log("📩 New Notification:", data);
-
-    // Save notification in PostgreSQL
+// 🎯 Connect to RabbitMQ
+async function connectRabbitMQ() {
     try {
-        await pool.query(
-            "INSERT INTO notifications (user_id, message) VALUES ($1, $2)",
-            [data.user_id, data.message]
-        );
-    } catch (err) {
-        console.error("Error saving notification:", err);
+        connection = await amqp.connect("amqp://localhost"); // Change for remote RabbitMQ
+        channel = await connection.createChannel();
+        await channel.assertQueue("notifications"); // Declare the queue
+
+        console.log("🐰 RabbitMQ Connected & Queue Initialized");
+
+        // 📌 Subscribe to Booking Notifications
+        channel.consume("notifications", async (msg) => {
+            const data = JSON.parse(msg.content.toString());
+            console.log("📩 New Notification:", data);
+
+            // Save notification in PostgreSQL
+            try {
+                await pool.query(
+                    "INSERT INTO notifications (user_id, message) VALUES ($1, $2)",
+                    [data.user_id, data.message]
+                );
+                channel.ack(msg); // Acknowledge the message
+            } catch (err) {
+                console.error("Error saving notification:", err);
+            }
+        });
+    } catch (error) {
+        console.error("❌ RabbitMQ Connection Error:", error);
     }
-});
+}
+
+// 📌 Run RabbitMQ connection
+connectRabbitMQ();
 
 // 📌 Get Notifications for a User
 app.get("/notifications/:userId", async (req, res) => {
@@ -40,5 +56,5 @@ app.get("/notifications/:userId", async (req, res) => {
     }
 });
 
-app.listen(8004, () => console.log("Notification Service running on port 8004"));
- 
+// 🚀 Start Server
+app.listen(8004, () => console.log("📩 Notification Service running on port 8004"));
