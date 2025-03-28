@@ -15,7 +15,13 @@ let channel, connection;
 // 🎯 Connect to RabbitMQ
 async function connectRabbitMQ() {
     try {
-        connection = await amqp.connect("amqp://localhost"); // Change if using a remote RabbitMQ server
+        amqp.connect('amqp://rabbitmq', function(error, connection) {
+            if (error) {
+                console.error('RabbitMQ Connection Error:', error);
+                return;
+            }
+            console.log('Connected to RabbitMQ');
+        }); // Change if using a remote RabbitMQ server
         channel = await connection.createChannel();
         await channel.assertQueue("user_events"); // Declare queue
 
